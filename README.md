@@ -28,7 +28,7 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-Open `http://YOUR_SERVER_IP:3000`. Stop with `docker compose down`. The container runs as the unprivileged Node user. The host mapping is `3000:3000`; change the first port in `compose.yaml` if needed. No volumes or database are required. Docker was unavailable in the development environment, so the container build has not been executed there.
+Open `http://YOUR_SERVER_IP:3008`. Stop with `docker compose down`. The container runs as the unprivileged Node user. The host mapping is `3008:3000`; change the first port in `compose.yaml` if needed. The application continues listening on port 3000 inside the container. No volumes or database are required. Docker was unavailable in the development environment, so the container build has not been executed there.
 
 ## Configuration
 

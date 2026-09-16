@@ -2,7 +2,7 @@ services:
   task-reader:
     build: .
     ports:
-      - "3000:3000"
+      - "3008:3000"
     environment:
       PORT: 3000
       INDEX_REFRESH_MS: ${INDEX_REFRESH_MS:-86400000}
