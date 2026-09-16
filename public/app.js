@@ -8,6 +8,69 @@ const detailRetry = document.querySelector('#detail-retry');
 const initialContent = article.innerHTML;
 let tasks = [], matches = [], activeIndex = -1, controller, generation = 0, selectedId;
 const element = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+const viewer = element('dialog', undefined, 'image-viewer');
+viewer.setAttribute('aria-label', 'Task image viewer');
+const viewerClose = element('button', 'Close ×');
+const viewerPrevious = element('button', '← Previous');
+const viewerNext = element('button', 'Next →');
+const viewerImage = element('img');
+const viewerCaption = element('p');
+const viewerCount = element('span');
+const viewerStatus = element('p');
+viewerStatus.setAttribute('role', 'status');
+viewerCount.setAttribute('aria-live', 'polite');
+const viewerControls = element('div', undefined, 'viewer-controls');
+viewerControls.append(viewerPrevious, viewerCount, viewerNext, viewerClose);
+viewer.append(viewerControls, viewerImage, viewerCaption, viewerStatus);
+document.body.append(viewer);
+let gallery = [], galleryIndex = 0, viewerOpener;
+function imageSource(img) {
+  const href = img.closest('a')?.href;
+  if (href) {
+    const url = new URL(href);
+    if (['http:', 'https:'].includes(url.protocol) && (url.hostname === 'static.wikia.nocookie.net' || /\.(png|jpe?g|webp|gif|avif|svg)$/i.test(url.pathname))) return url.href;
+  }
+  return img.src;
+}
+function showImage(index) {
+  galleryIndex = (index + gallery.length) % gallery.length;
+  const image = gallery[galleryIndex];
+  viewerImage.alt = image.caption;
+  viewerCaption.textContent = image.caption;
+  viewerCount.textContent = `${galleryIndex + 1} / ${gallery.length}`;
+  viewerPrevious.disabled = viewerNext.disabled = gallery.length < 2;
+  viewerStatus.textContent = 'Loading image…';
+  viewerImage.src = image.src;
+}
+function closeViewer() { if (viewer.open) viewer.close(); }
+viewerImage.addEventListener('load', () => { viewerStatus.textContent = ''; });
+viewerImage.addEventListener('error', () => { viewerStatus.textContent = 'This image could not load. Try another image or reopen the viewer.'; });
+viewerClose.addEventListener('click', closeViewer);
+viewerPrevious.addEventListener('click', () => showImage(galleryIndex - 1));
+viewerNext.addEventListener('click', () => showImage(galleryIndex + 1));
+viewer.addEventListener('keydown', event => {
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); showImage(galleryIndex + (event.key === 'ArrowRight' ? 1 : -1)); }
+  if (event.key === 'Escape') { event.preventDefault(); closeViewer(); }
+});
+viewer.addEventListener('click', event => { if (event.target === viewer) closeViewer(); });
+viewer.addEventListener('close', () => {
+  document.body.classList.remove('viewer-open');
+  viewerImage.removeAttribute('src');
+  if (viewerOpener?.isConnected) viewerOpener.focus();
+});
+function openViewer(img) {
+  const unique = new Map();
+  for (const image of article.querySelectorAll('img')) {
+    const src = imageSource(image);
+    if (!unique.has(src)) unique.set(src, {src, caption: image.closest('.gallerybox, figure, .thumb')?.querySelector('.gallerytext, figcaption, .thumbcaption')?.textContent.trim() || image.alt || 'Task image'});
+  }
+  gallery = [...unique.values()];
+  viewerOpener = img.closest('a') || img;
+  showImage(gallery.findIndex(image => image.src === imageSource(img)));
+  viewer.showModal();
+  document.body.classList.add('viewer-open');
+  viewerClose.focus();
+}
 async function api(path, signal) { const response = await fetch(path, {signal}); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Request failed. Please retry.'); return data; }
 function closeSuggestions() { suggestions.hidden = true; search.setAttribute('aria-expanded', 'false'); search.removeAttribute('aria-activedescendant'); activeIndex = -1; }
 function activate(index) {
@@ -68,6 +131,7 @@ function renderTask(data) {
   article.append(credits);
 }
 async function choose(id, push = true, hash = '') {
+  closeViewer();
   closeSuggestions(); controller?.abort(); controller = new AbortController(); const version = ++generation; selectedId = id;
   if (push) history.pushState({}, '', `?task=${id}${hash}`);
   search.value = tasks.find(task => task.pageid === Number(id))?.title || search.value;
@@ -81,6 +145,8 @@ async function choose(id, push = true, hash = '') {
   finally { if (version === generation) article.removeAttribute('aria-busy'); }
 }
 article.addEventListener('click', event => {
+  const image = event.target.closest('img') || event.target.closest('a')?.querySelector('img');
+  if (image && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && !event.button) { event.preventDefault(); openViewer(image); return; }
   const link = event.target.closest('a'); if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button) return;
   const url = new URL(link.href);
   if (url.origin === location.origin && url.hash) { const target = document.getElementById(decodeURIComponent(url.hash.slice(1))); if (target?.tagName === 'DETAILS') target.open = true; }
@@ -95,6 +161,7 @@ async function loadIndex() {
   catch (error) { indexStatus.textContent = error.message; indexRetry.hidden = false; }
 }
 function restoreLocation() {
+  closeViewer();
   const id = new URLSearchParams(location.search).get('task');
   if (id) choose(id, false, location.hash);
   else { controller?.abort(); generation++; selectedId = null; search.value = ''; detailStatus.textContent = ''; detailRetry.hidden = true; article.removeAttribute('aria-busy'); article.innerHTML = initialContent; }

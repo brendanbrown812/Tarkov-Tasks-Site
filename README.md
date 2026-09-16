@@ -48,7 +48,7 @@ The index refreshes on the first request after expiry. Concurrent refreshes shar
 - `src/parser.js`: Cheerio DOM extraction and sanitize-html allowlist. Navigation, scripts, event handlers, unsafe URLs and inline styles are removed. Subheadings, lists, tables, images, captions and unknown sections survive.
 - `public/`: plain browser code and responsive dark styling. Accessible keyboard search, internal known-task links, section anchors, URL history, abort plus generation guards, and retry states.
 
-Images retain the wiki's thumbnail source where supplied, load lazily, and link to the wiki's image target for readable viewing. Media file-description links are included in each task's attribution. Images are loaded directly from their source; the backend is not an image or arbitrary-URL proxy.
+Images retain the wiki's thumbnail source where supplied and load lazily. Clicking an image opens a larger modal viewer with captions and previous/next controls for the task's unique images. Use the left/right arrow keys to browse and Escape or Close to return to the task. Full-size images load only as they are selected. Media file-description links are included in each task's attribution. Images are loaded directly from their source; the backend is not an image or arbitrary-URL proxy.
 
 ## Verification
 
