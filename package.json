@@ -1,0 +1,22 @@
+{
+  "name": "tarkov-task-reader",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "test": "node --test test/*.test.js",
+    "test:live": "node test/live-check.js",
+    "demo": "node --env-file-if-exists=.env src/server.js --fixture"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "sanitize-html": "^2.17.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

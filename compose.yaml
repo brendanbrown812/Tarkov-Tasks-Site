@@ -1,0 +1,11 @@
+services:
+  task-reader:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      INDEX_REFRESH_MS: ${INDEX_REFRESH_MS:-86400000}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-12000}
+    restart: unless-stopped
+    init: true
