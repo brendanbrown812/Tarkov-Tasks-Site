@@ -80,3 +80,15 @@ Images may have different rights; the text license is not assumed to cover them.
 ## Limits
 
 Fandom availability, changes to wiki markup, and source-image hosting remain upstream dependencies. The parser is intentionally separated for future template adjustments. The cache is process-local and does not survive restarts. No task progress, authentication, persistent storage, deployment, or push is included.
+
+## Item lookup
+
+A second dropdown lists all article entries reachable through the wiki Inventory category, including nested item, medicine, provision, gear, weapon, ammunition and attachment categories. It also includes inventory overview guides from those categories. Filter locally by name, then select an entry to fetch its current article. Location sections appear first as “Where to find it,” preserving container lists, map subsections and images. Articles without location sections say so; the wiki does not guarantee spawns or provide location data for every item.
+
+`GET /api/items` returns `{items: [{pageid, title}], updatedAt, stale}`. The recursive index follows pagination, deduplicates pages and categories, and uses the same cache refresh and stale fallback behavior as tasks. `GET /api/items/:pageid` returns sanitized article content. Item URLs use `?item=PAGE_ID` and support history and retries. Fixture mode explicitly disables items.
+
+Verified September 20, 2026: 4,696 wiki inventory entries, with a cold index load of about 25 seconds. Live Graphics card and Salewa first aid kit articles contain Location sections. This reflects wiki categorization, not an independently verified complete game database.
+
+## Main story chapters
+
+The task dropdown combines Category:Quests and Category:Story chapters, marks story entries “Main story,” and excludes the Story chapters overview page. Both categories follow pagination and deduplicate by page ID. Story chapters use the existing task URLs, reader, images and internal links. Verified live: 903 total entries (893 quests plus 10 story chapters); Tour and Batya retain objectives, guides, tables and stage headings. The task index adds `story: true` for main story entries. All 15 deterministic tests pass. Restart the server after updating to clear the old in-memory index.

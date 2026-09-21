@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseTask} from '../src/parser.js';
-import {fetchIndex, createIndexCache, createWikiClient} from '../src/wiki.js';
+import {fetchIndex, fetchItemIndex, createIndexCache, createWikiClient} from '../src/wiki.js';
 test('real Debut response retains content and metadata but removes navigation', async () => {
   const result = parseTask(JSON.parse(await readFile(new URL('./fixtures/debut.json', import.meta.url), 'utf8')));
   assert.equal(result.metadata.trader, 'Prapor');
@@ -30,7 +30,7 @@ test('index follows the entire continuation object and deduplicates page IDs', a
 });
 test('cache coalesces requests and retains last successful index on failed refresh', async () => {
   let calls = 0;
-  const cache = createIndexCache(async () => { calls++; if (calls > 1) throw new Error('offline'); return {query: {categorymembers: [{pageid: 1, title: 'A'}]}}; }, 1);
+  const cache = createIndexCache(async params => { if (params.cmtitle === 'Category:Story chapters') return {query: {categorymembers: []}}; calls++; if (calls > 1) throw new Error('offline'); return {query: {categorymembers: [{pageid: 1, title: 'A'}]}}; }, 1);
   await Promise.all([cache(), cache()]); assert.equal(calls, 1);
   await new Promise(resolve => setTimeout(resolve, 5));
   const stale = await cache(); assert.equal(stale.stale, true); assert.equal(stale.tasks[0].title, 'A');
@@ -46,4 +46,29 @@ test('HTTP transient failures retry, MediaWiki permanent errors do not', async (
   calls = 0;
   const failing = createWikiClient({delay: async () => {}, fetchImpl: async () => { calls++; return {ok: true, json: async () => ({error: {code: 'missingtitle', info: 'Missing page'}})}; }});
   await assert.rejects(failing({}), /Missing page/); assert.equal(calls, 1);
+});
+
+test('item index traverses nested categories, handles cycles, pagination and duplicates', async () => {
+  const calls = [];
+  const result = await fetchItemIndex(async params => {
+    calls.push(params);
+    if (params.cmtitle === 'Category:Inventory') return {query: {categorymembers: [{title: 'Category:Items'}, {pageid: 2, title: 'Salewa'}]}};
+    if (!params.cmcontinue) return {query: {categorymembers: [{title: 'Category:Inventory'}, {pageid: 1, title: 'Graphics card'}]}, continue: {cmcontinue: 'next', continue: '-||'}};
+    return {query: {categorymembers: [{pageid: 2, title: 'Salewa'}]}};
+  });
+  assert.deepEqual(result.map(item => item.title), ['Graphics card', 'Salewa']);
+  assert.equal(calls.length, 3); assert.equal(calls[2].continue, '-||');
+  await assert.rejects(fetchItemIndex(async () => ({query: {categorymembers: []}, continue: {cmcontinue: 'same'}})), /repeated/);
+});
+
+test('task index merges paginated story chapters, excludes overview and deduplicates overlaps', async () => {
+  const calls = [];
+  const tasks = await fetchIndex(async params => {
+    calls.push(params);
+    if (params.cmtitle === 'Category:Quests') return {query: {categorymembers: [{pageid: 1, title: 'Debut'}, {pageid: 2, title: 'Tour'}]}};
+    if (!params.cmcontinue) return {query: {categorymembers: [{pageid: 2, title: 'Tour'}, {pageid: 3, title: 'Story chapters'}]}, continue: {cmcontinue: 'story-next', continue: '-||'}};
+    return {query: {categorymembers: [{pageid: 4, title: 'Batya'}]}};
+  });
+  assert.deepEqual(tasks, [{pageid: 4, title: 'Batya', story: true}, {pageid: 1, title: 'Debut'}, {pageid: 2, title: 'Tour', story: true}]);
+  assert.equal(calls[2].cmcontinue, 'story-next'); assert.equal(calls[2].continue, '-||');
 });

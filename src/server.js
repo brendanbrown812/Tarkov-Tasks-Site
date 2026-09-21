@@ -1,11 +1,12 @@
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-import {createWikiClient, createIndexCache} from './wiki.js';
+import {createWikiClient, createIndexCache, fetchItemIndex} from './wiki.js';
 import {parseTask} from './parser.js';
 const fixtureMode = process.argv.includes('--fixture');
 const positive = (value, fallback) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
 const request = createWikiClient({timeoutMs: positive(process.env.REQUEST_TIMEOUT_MS, 12000)});
 const getIndex = createIndexCache(request, positive(process.env.INDEX_REFRESH_MS, 86400000));
+const getItems = createIndexCache(request, positive(process.env.INDEX_REFRESH_MS, 86400000), fetchItemIndex, 'items');
 const fixture = fixtureMode ? JSON.parse(await readFile(new URL('../test/fixtures/debut.json', import.meta.url), 'utf8')) : null;
 const assets = {'/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']};
 createServer(async (req, res) => {
@@ -17,12 +18,15 @@ createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (req.method !== 'GET') return json(405, {error: 'Method not allowed.'});
     if (url.pathname === '/api/tasks') return json(200, fixtureMode ? {tasks: [{pageid: fixture.parse.pageid, title: fixture.parse.title}], fixture: true} : await getIndex());
-    if (url.pathname.startsWith('/api/tasks/')) {
+    if (url.pathname === '/api/items') return json(200, fixtureMode ? {items: [], fixture: true} : await getItems());
+    if (url.pathname.startsWith('/api/tasks/') || url.pathname.startsWith('/api/items/')) {
+      const isItem = url.pathname.startsWith('/api/items/');
+      if (fixtureMode && isItem) return json(404, {error: 'Items are unavailable in fixture mode.'});
       const id = url.pathname.slice('/api/tasks/'.length);
       if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) return json(400, {error: 'Choose a valid task page ID.'});
       if (fixtureMode && Number(id) !== fixture.parse.pageid) return json(404, {error: 'Only Debut is available in fixture mode.'});
       const payload = fixtureMode ? fixture : await request({action: 'parse', pageid: id, prop: 'text|images|revid', disableeditsection: '1', disablelimitreport: '1'});
-      return json(200, {...parseTask(payload), fixture: fixtureMode});
+      return json(200, {...parseTask(payload), kind: isItem ? 'item' : 'task', fixture: fixtureMode});
     }
     if (!assets[url.pathname]) return json(404, {error: 'Not found.'});
     const [name, type] = assets[url.pathname];

@@ -5,7 +5,7 @@ const request = createWikiClient();
 let indexRequests = 0;
 const tasks = await fetchIndex(params => { indexRequests++; return request(params); });
 console.log(JSON.stringify({tasks: tasks.length, indexRequests, first: tasks[0], last: tasks.at(-1)}));
-for (const title of ['Debut', 'Introduction', 'The Guide', 'Gunsmith - MP-133']) {
+for (const title of ['Debut', 'Introduction', 'The Guide', 'Gunsmith - MP-133', 'Tour', 'Batya']) {
   const task = tasks.find(item => item.title === title);
   if (!task) { console.log(`Missing from category: ${title}`); continue; }
   const data = await request({action: 'parse', pageid: task.pageid, prop: 'text|images|revid', disableeditsection: '1', disablelimitreport: '1'});

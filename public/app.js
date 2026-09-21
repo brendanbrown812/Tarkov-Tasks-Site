@@ -5,11 +5,16 @@ const detailStatus = document.querySelector('#detail-status');
 const article = document.querySelector('#task');
 const indexRetry = document.querySelector('#index-retry');
 const detailRetry = document.querySelector('#detail-retry');
+const itemSelect = document.querySelector('#item-select');
+const itemFilter = document.querySelector('#item-filter');
+const itemStatus = document.querySelector('#item-status');
+const itemRetry = document.querySelector('#item-retry');
+let items = [], selectedKind = 'task';
 const initialContent = article.innerHTML;
 let tasks = [], matches = [], activeIndex = -1, controller, generation = 0, selectedId;
 const element = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 const viewer = element('dialog', undefined, 'image-viewer');
-viewer.setAttribute('aria-label', 'Task image viewer');
+viewer.setAttribute('aria-label', 'Wiki image viewer');
 const viewerClose = element('button', 'Close ×');
 const viewerPrevious = element('button', '← Previous');
 const viewerNext = element('button', 'Next →');
@@ -84,7 +89,7 @@ function showSuggestions() {
   matches = tasks.filter(task => task.title.toLocaleLowerCase().includes(query)).sort((a, b) => Number(b.title.toLocaleLowerCase().startsWith(query)) - Number(a.title.toLocaleLowerCase().startsWith(query)) || a.title.localeCompare(b.title)).slice(0, 30);
   suggestions.replaceChildren();
   for (const [index, task] of matches.entries()) {
-    const item = element('li', task.title); item.id = `option-${index}`; item.setAttribute('role', 'option'); item.setAttribute('aria-selected', 'false');
+    const item = element('li', task.title + (task.story ? ' · Main story' : '')); item.id = `option-${index}`; item.setAttribute('role', 'option'); item.setAttribute('aria-selected', 'false');
     item.addEventListener('pointerdown', event => event.preventDefault());
     item.addEventListener('click', () => choose(task.pageid)); suggestions.append(item);
   }
@@ -107,14 +112,19 @@ function externalLink(text, href) { const a = element('a', text); a.href = href;
 function renderTask(data) {
   article.replaceChildren();
   const heading = element('div', undefined, 'task-heading');
-  const titleBlock = element('div'); titleBlock.append(element('span', 'TASK BRIEFING', 'eyebrow'), element('h1', data.title));
+  const titleBlock = element('div'); titleBlock.append(element('span', data.kind === 'item' ? 'ITEM REFERENCE' : 'TASK BRIEFING', 'eyebrow'), element('h1', data.title));
   const metadata = element('div', undefined, 'metadata');
   if (data.metadata.trader) metadata.append(element('span', `TRADER / ${data.metadata.trader}`));
   if (data.metadata.location) metadata.append(element('span', `LOCATION / ${data.metadata.location}`));
   titleBlock.append(metadata); heading.append(titleBlock);
-  if (data.metadata.image) { const link = externalLink('', data.metadata.image); const img = element('img'); img.src = data.metadata.image; img.alt = `${data.title} quest image`; img.loading = 'lazy'; link.append(img); heading.append(link); }
+  if (data.metadata.image) { const link = externalLink('', data.metadata.image); const img = element('img'); img.src = data.metadata.image; img.alt = `${data.title} image`; img.loading = 'lazy'; link.append(img); heading.append(link); }
   article.append(heading);
-  const nav = element('nav', undefined, 'section-nav'); nav.setAttribute('aria-label', 'Task sections');
+  const nav = element('nav', undefined, 'section-nav'); nav.setAttribute('aria-label', 'Article sections');
+  if (data.kind === 'item') {
+    const locations = data.sections.filter(section => /^(locations?|spawn locations?|where to find)$/i.test(section.title));
+    if (locations.length) data = {...data, sections: [...locations.map(section => ({...section, title: 'Where to find it'})), ...data.sections.filter(section => !locations.includes(section))]};
+    else article.append(element('p', 'The wiki does not list a dedicated location section for this item. Check the article below for other details.', 'location-note'));
+  }
   for (const section of data.sections) { const link = element('a', section.title); link.href = `#${encodeURIComponent(section.id)}`; nav.append(link); }
   article.append(nav);
   for (const section of data.sections) {
@@ -130,16 +140,17 @@ function renderTask(data) {
   if (data.images.length) { const media = element('details'); media.append(element('summary', 'Image sources & rights')); for (const name of data.images) { const p = element('p'); p.append(externalLink(name, `https://escapefromtarkov.fandom.com/wiki/File:${encodeURIComponent(name)}`)); media.append(p); } credits.append(media); }
   article.append(credits);
 }
-async function choose(id, push = true, hash = '') {
+async function choose(id, push = true, hash = '', kind = 'task') {
   closeViewer();
-  closeSuggestions(); controller?.abort(); controller = new AbortController(); const version = ++generation; selectedId = id;
-  if (push) history.pushState({}, '', `?task=${id}${hash}`);
-  search.value = tasks.find(task => task.pageid === Number(id))?.title || search.value;
-  article.replaceChildren(); article.setAttribute('aria-busy', 'true'); detailStatus.textContent = 'Loading task briefing…'; detailRetry.hidden = true;
+  closeSuggestions(); controller?.abort(); controller = new AbortController(); const version = ++generation; selectedId = id; selectedKind = kind;
+  if (push) history.pushState({}, '', `?${kind}=${id}${hash}`);
+  if (kind === 'task') search.value = tasks.find(task => task.pageid === Number(id))?.title || search.value;
+  itemSelect.value = kind === 'item' ? String(id) : '';
+  article.replaceChildren(); article.setAttribute('aria-busy', 'true'); detailStatus.textContent = kind === 'item' ? 'Loading item locations…' : 'Loading task briefing…'; detailRetry.hidden = true;
   try {
-    const data = await api(`/api/tasks/${encodeURIComponent(id)}`, controller.signal);
+    const data = await api(`/api/${kind === 'item' ? 'items' : 'tasks'}/${encodeURIComponent(id)}`, controller.signal);
     if (version !== generation) return;
-    search.value = data.title; renderTask(data); detailStatus.textContent = data.fixture ? 'DEVELOPMENT FIXTURE · Attached Debut response. Live fetching is disabled in this mode.' : '';
+    if (kind === 'task') search.value = data.title; renderTask({...data, kind}); detailStatus.textContent = data.fixture ? 'DEVELOPMENT FIXTURE · Attached Debut response. Live fetching is disabled in this mode.' : '';
     if (hash) { try { const target = document.getElementById(decodeURIComponent(hash.slice(1))); if (target?.tagName === 'DETAILS') target.open = true; target?.scrollIntoView(); } catch {} }
   } catch (error) { if (version !== generation || error.name === 'AbortError') return; detailStatus.textContent = error.message; detailRetry.hidden = false; }
   finally { if (version === generation) article.removeAttribute('aria-busy'); }
@@ -153,7 +164,8 @@ article.addEventListener('click', event => {
   if (url.origin !== 'https://escapefromtarkov.fandom.com' || !url.pathname.startsWith('/wiki/')) return;
   let title; try { title = decodeURIComponent(url.pathname.slice(6)).replaceAll('_', ' '); } catch { return; }
   const task = tasks.find(task => task.title.toLowerCase() === title.toLowerCase());
-  if (task && !url.search) { event.preventDefault(); choose(task.pageid, true, url.hash); }
+  const item = items.find(item => item.title.toLowerCase() === title.toLowerCase());
+  if ((task || item) && !url.search) { event.preventDefault(); choose((task || item).pageid, true, url.hash, task ? 'task' : 'item'); }
 });
 async function loadIndex() {
   indexRetry.hidden = true; indexStatus.textContent = 'Loading task index…';
@@ -162,10 +174,33 @@ async function loadIndex() {
 }
 function restoreLocation() {
   closeViewer();
-  const id = new URLSearchParams(location.search).get('task');
-  if (id) choose(id, false, location.hash);
-  else { controller?.abort(); generation++; selectedId = null; search.value = ''; detailStatus.textContent = ''; detailRetry.hidden = true; article.removeAttribute('aria-busy'); article.innerHTML = initialContent; }
+  const params = new URLSearchParams(location.search);
+  const kind = params.has('item') ? 'item' : 'task';
+  const id = params.get(kind);
+  if (id) choose(id, false, location.hash, kind);
+  else { controller?.abort(); generation++; selectedId = null; itemSelect.value = ''; search.value = ''; detailStatus.textContent = ''; detailRetry.hidden = true; article.removeAttribute('aria-busy'); article.innerHTML = initialContent; }
 }
 window.addEventListener('popstate', restoreLocation);
-indexRetry.addEventListener('click', loadIndex); detailRetry.addEventListener('click', () => choose(selectedId, false, location.hash));
-loadIndex(); restoreLocation();
+indexRetry.addEventListener('click', loadIndex); detailRetry.addEventListener('click', () => choose(selectedId, false, location.hash, selectedKind));
+function filterItems() {
+  const query = itemFilter.value.trim().toLocaleLowerCase();
+  const matches = items.filter(item => item.title.toLocaleLowerCase().includes(query));
+  const placeholder = element('option', matches.length ? 'Choose an item…' : 'No matching items'); placeholder.value = '';
+  itemSelect.replaceChildren(placeholder);
+  for (const item of matches) { const option = element('option', item.title); option.value = String(item.pageid); itemSelect.append(option); }
+  itemSelect.value = selectedKind === 'item' && matches.some(item => item.pageid === Number(selectedId)) ? String(selectedId) : '';
+}
+async function loadItems() {
+  itemRetry.hidden = true;
+  itemStatus.textContent = 'Loading item index; the first load can take a minute…';
+  try {
+    const data = await api('/api/items'); items = data.items;
+    itemFilter.disabled = itemSelect.disabled = !items.length;
+    filterItems();
+    itemStatus.textContent = data.fixture ? 'Items are unavailable in development fixture mode.' : items.length + ' wiki inventory entries · ' + (data.stale ? 'Cached index; refresh unavailable' : 'Locations vary by item; spawns are not guaranteed');
+  } catch (error) { itemStatus.textContent = error.message; itemRetry.hidden = false; }
+}
+itemFilter.addEventListener('input', filterItems);
+itemSelect.addEventListener('change', () => { if (itemSelect.value) choose(itemSelect.value, true, '', 'item'); });
+itemRetry.addEventListener('click', loadItems);
+loadIndex(); loadItems(); restoreLocation();
