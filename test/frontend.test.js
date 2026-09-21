@@ -6,8 +6,8 @@ const html = await readFile(new URL('../public/index.html', import.meta.url), 'u
 const script = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const taskData = (pageid, title) => ({pageid, title, metadata: {}, sections: [{title: 'Guide', id: 'Guide', html: '<p>Walkthrough</p>'}], images: [], sourceUrl: 'https://escapefromtarkov.fandom.com/wiki/Test'});
-function setup() {
-  const dom = new JSDOM(html, {url: 'http://localhost:3000', runScripts: 'outside-only'});
+function setup(query = '') {
+  const dom = new JSDOM(html, {url: 'http://localhost:3000' + query, runScripts: 'outside-only'});
   const pending = [];
   dom.window.HTMLElement.prototype.scrollIntoView = () => {};
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -104,5 +104,16 @@ test('main story chapters appear in the existing task dropdown and open as tasks
   assert.equal(app.input.value, 'Tour'); assert.equal(app.dom.window.location.search, '?task=4');
   assert.match(app.document.querySelector('#task').textContent, /Escape Ground Zero/);
   assert.match(app.document.querySelector('#task').textContent, /Story walkthrough/);
+  app.dom.window.close();
+});
+
+test('opening a saved item URL restores the single picker without the removed select', async () => {
+  const app = setup('?item=10');
+  assert.equal(app.document.querySelector('#item-select'), null);
+  assert.equal(app.pending[0].path, '/api/items/10');
+  app.pending[0].resolve(taskData(10, 'Graphics card')); await tick();
+  assert.equal(app.document.querySelector('#item-filter').value, 'Graphics card');
+  assert.equal(app.document.querySelector('h1').textContent, 'Graphics card');
+  assert.equal(app.document.querySelector('#detail-retry').hidden, true);
   app.dom.window.close();
 });

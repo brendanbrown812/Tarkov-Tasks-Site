@@ -30,7 +30,8 @@ createServer(async (req, res) => {
     }
     if (!assets[url.pathname]) return json(404, {error: 'Not found.'});
     const [name, type] = assets[url.pathname];
-    res.writeHead(200, {'Content-Type': `${type}; charset=utf-8`});
+    // Keep HTML and its DOM-dependent scripts in sync across updates.
+    res.writeHead(200, {'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store'});
     res.end(await readFile(new URL(`../public/${name}`, import.meta.url)));
   } catch (error) { console.error(error.message); json(502, {error: 'Could not load content from the Tarkov Wiki. Please try again shortly.'}); }
 }).on('error', error => {
