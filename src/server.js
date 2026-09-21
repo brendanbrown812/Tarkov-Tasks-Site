@@ -1,14 +1,27 @@
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
 import {createWikiClient, createIndexCache, fetchItemIndex} from './wiki.js';
 import {parseTask} from './parser.js';
 const fixtureMode = process.argv.includes('--fixture');
 const positive = (value, fallback) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
 const request = createWikiClient({timeoutMs: positive(process.env.REQUEST_TIMEOUT_MS, 12000)});
-const getIndex = createIndexCache(request, positive(process.env.INDEX_REFRESH_MS, 86400000));
-const getItems = createIndexCache(request, positive(process.env.INDEX_REFRESH_MS, 86400000), fetchItemIndex, 'items');
+const refreshMs = positive(process.env.INDEX_REFRESH_MS, 86400000);
+const cacheDirectory = resolve(process.env.INDEX_CACHE_DIR || '.cache');
+const getIndex = createIndexCache(request, refreshMs, undefined, 'tasks', {cacheFile: resolve(cacheDirectory, 'tasks-v1.json')});
+const getItems = createIndexCache(request, refreshMs, fetchItemIndex, 'items', {cacheFile: resolve(cacheDirectory, 'items-v1.json')});
 const fixture = fixtureMode ? JSON.parse(await readFile(new URL('../test/fixtures/debut.json', import.meta.url), 'utf8')) : null;
 const assets = {'/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css']};
+if (!fixtureMode) {
+  console.log('Preparing task and item indexes…');
+  const results = await Promise.allSettled([getIndex(), getItems()]);
+  for (const [index, result] of results.entries()) {
+    const key = index === 0 ? 'tasks' : 'items';
+    console.log(result.status === 'fulfilled' ? key + ': ' + result.value[key].length + ' cached entries ready' : key + ': unavailable; will retry in the background');
+  }
+  // Refresh even when no visitors arrive; failures retain the saved indexes.
+  setInterval(() => { void Promise.allSettled([getIndex(), getItems()]); }, Math.min(refreshMs, 30000)).unref();
+}
 createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');

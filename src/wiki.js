@@ -1,3 +1,6 @@
+import {readFile, writeFile, mkdir, rename, rm} from 'node:fs/promises';
+import {dirname} from 'node:path';
+import {randomUUID} from 'node:crypto';
 export const wikiOrigin = 'https://escapefromtarkov.fandom.com';
 export function createWikiClient({fetchImpl = fetch, timeoutMs = 12000, delay = ms => new Promise(resolve => setTimeout(resolve, ms))} = {}) {
   return async params => {
@@ -41,15 +44,49 @@ export async function fetchIndex(request) {
   if (!entries.size) throw new Error('Wiki returned an empty task index.');
   return [...entries.values()].sort((a, b) => a.title.localeCompare(b.title));
 }
-export function createIndexCache(request, refreshMs = 86400000, loader = fetchIndex, key = 'tasks') {
-  let tasks, updatedAt = 0, pending, retryAfter = 0;
-  return async () => {
-    if ((!tasks || Date.now() - updatedAt >= refreshMs) && Date.now() >= retryAfter) {
-      pending ??= loader(request).then(result => { tasks = result; updatedAt = Date.now(); retryAfter = 0; }).catch(error => { retryAfter = Date.now() + 30000; if (!tasks) throw error; }).finally(() => { pending = null; });
-      await pending;
+export function createIndexCache(request, refreshMs = 86400000, loader = fetchIndex, key = 'tasks', {cacheFile, now = Date.now, warn = console.warn} = {}) {
+  let entries, updatedAt = 0, pending, retryAfter = 0, initialized;
+  const validEntries = value => Array.isArray(value) && value.length > 0 && value.every(entry => Number.isSafeInteger(entry.pageid) && entry.pageid > 0 && typeof entry.title === 'string' && entry.title.length > 0 && (entry.story === undefined || typeof entry.story === 'boolean'));
+  async function restore() {
+    if (!cacheFile) return;
+    try {
+      const saved = JSON.parse(await readFile(cacheFile, 'utf8'));
+      if (saved.version !== 1 || saved.key !== key || !Number.isSafeInteger(saved.updatedAt) || saved.updatedAt <= 0 || saved.updatedAt > now() || !validEntries(saved.entries)) throw new Error('Invalid cache file');
+      entries = saved.entries; updatedAt = saved.updatedAt;
+    } catch (error) { if (error.code !== 'ENOENT') warn('Could not restore ' + key + ' cache: ' + error.message); }
+  }
+  async function persist() {
+    if (!cacheFile) return;
+    const temporary = cacheFile + '.' + randomUUID() + '.tmp';
+    try {
+      await mkdir(dirname(cacheFile), {recursive: true});
+      await writeFile(temporary, JSON.stringify({version: 1, key, updatedAt, entries}), 'utf8');
+      await rename(temporary, cacheFile);
+    } catch (error) {
+      warn('Could not save ' + key + ' cache: ' + error.message);
+      await rm(temporary, {force: true}).catch(() => {});
     }
-    if (!tasks) throw new Error(`The wiki ${key} index is unavailable. Please retry shortly.`);
-    return {[key]: tasks, updatedAt, stale: Date.now() - updatedAt >= refreshMs};
+  }
+  function refresh() {
+    pending ??= Promise.resolve().then(() => loader(request)).then(async result => {
+      if (!validEntries(result)) throw new Error('Invalid ' + key + ' index');
+      entries = result; updatedAt = now(); retryAfter = 0;
+      await persist();
+    }).catch(error => {
+      retryAfter = now() + 30000;
+      warn('Could not refresh ' + key + ' cache: ' + error.message);
+    }).finally(() => { pending = null; });
+    return pending;
+  }
+  return async () => {
+    await (initialized ??= restore());
+    if ((!entries || now() - updatedAt >= refreshMs) && now() >= retryAfter) {
+      const work = refresh();
+      // Existing indexes stay available while the wiki refresh runs.
+      if (!entries) await work;
+    }
+    if (!entries) throw new Error('The wiki ' + key + ' index is unavailable. Please retry shortly.');
+    return {[key]: entries, updatedAt, stale: now() - updatedAt >= refreshMs};
   };
 }
 

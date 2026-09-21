@@ -1,6 +1,6 @@
 # Tarkov Task Reader
 
-A lightweight, self-hosted reader for the Escape from Tarkov Fandom Wiki. Search locally, select a task, and fetch its current rendered wiki content through the backend. No accounts, database, build pipeline, or UI framework.
+A lightweight, self-hosted reader for the Escape from Tarkov Fandom Wiki. Search locally, select a task, and fetch its current rendered wiki content through the backend. No accounts, database, build pipeline, or UI framework. Index snapshots are saved locally for faster startup.
 
 ## Run locally
 
@@ -28,17 +28,18 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-Open `http://YOUR_SERVER_IP:3008`. Stop with `docker compose down`. The container runs as the unprivileged Node user. The host mapping is `3008:3000`; change the first port in `compose.yaml` if needed. The application continues listening on port 3000 inside the container. No volumes or database are required. Docker was unavailable in the development environment, so the container build has not been executed there.
+Open `http://YOUR_SERVER_IP:3008`. Stop with `docker compose down`. The container runs as the unprivileged Node user. The host mapping is `3008:3000`; change the first port in `compose.yaml` if needed. The application continues listening on port 3000 inside the container. Compose uses the index-cache volume to preserve task and item indexes across container restarts and rebuilds. Docker was unavailable in the development environment, so the container build has not been executed there.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | Local HTTP listener (container uses 3000) |
-| `INDEX_REFRESH_MS` | `86400000` | Refresh interval for the complete in-memory index |
+| `INDEX_REFRESH_MS` | `86400000` | Refresh interval for task and item indexes |
+| `INDEX_CACHE_DIR` | `.cache` | Directory for persistent index snapshots; Compose uses `/app/.cache` |
 | `REQUEST_TIMEOUT_MS` | `12000` | Per-attempt upstream timeout |
 
-The index refreshes on the first request after expiry. Concurrent refreshes share one fetch; a failed refresh preserves the last successful result with a stale indicator and a 30-second retry cooldown. Restarting clears the in-memory cache. Task details are fetched anew for each selection and are not cached by this application. Fandom may cache its own rendering. Transient upstream failures retry up to twice.
+Task and item indexes are prepared concurrently before the HTTP server starts accepting requests. Fresh disk snapshots load without wiki requests; an initial installation builds both indexes first. Expired snapshots remain immediately usable while refreshing in the background. A background timer checks for expiry even with no visitors. Refreshes are coalesced and failed fetches retain the last successful result with a 30-second retry cooldown. Missing or corrupt snapshots rebuild automatically; write failures log a warning and leave the in-memory cache usable. Fixture mode skips cache loading and all wiki startup requests. Task and item detail articles are still fetched on selection.
 
 ## API and structure
 
@@ -79,7 +80,7 @@ Images may have different rights; the text license is not assumed to cover them.
 
 ## Limits
 
-Fandom availability, changes to wiki markup, and source-image hosting remain upstream dependencies. The parser is intentionally separated for future template adjustments. The cache is process-local and does not survive restarts. No task progress, authentication, persistent storage, deployment, or push is included.
+Fandom availability, changes to wiki markup, and source-image hosting remain upstream dependencies. The parser is intentionally separated for future template adjustments. Index caches persist on disk; article details are not cached. No task progress, authentication, persistent storage, deployment, or push is included.
 
 ## Item lookup
 
@@ -91,4 +92,8 @@ Verified September 20, 2026: 4,696 wiki inventory entries, with a cold index loa
 
 ## Main story chapters
 
-The task dropdown combines Category:Quests and Category:Story chapters, marks story entries “Main story,” and excludes the Story chapters overview page. Both categories follow pagination and deduplicate by page ID. Story chapters use the existing task URLs, reader, images and internal links. Verified live: 903 total entries (893 quests plus 10 story chapters); Tour and Batya retain objectives, guides, tables and stage headings. The task index adds `story: true` for main story entries. All 15 deterministic tests pass. Restart the server after updating to clear the old in-memory index.
+The task dropdown combines Category:Quests and Category:Story chapters, marks story entries “Main story,” and excludes the Story chapters overview page. Both categories follow pagination and deduplicate by page ID. Story chapters use the existing task URLs, reader, images and internal links. Verified live: 903 total entries (893 quests plus 10 story chapters); Tour and Batya retain objectives, guides, tables and stage headings. The task index adds `story: true` for main story entries. All 15 deterministic tests pass. Indexes refresh automatically on expiry.
+
+### Cache operations
+
+The first uncached startup waits for the wiki index build before printing the listening URL. If an index cannot be built, the server still starts and retries in the background; that picker reports an error until data becomes available. Cached startups avoid that initial fetch. Snapshots use versioned JSON, retain story chapter labels, and are replaced atomically after successful builds. The default refresh interval is 24 hours. For Docker updates use `docker compose up -d --build`; the named cache volume is retained. Docker execution was not available for verification in this environment.

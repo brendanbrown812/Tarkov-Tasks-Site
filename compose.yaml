@@ -7,5 +7,10 @@ services:
       PORT: 3000
       INDEX_REFRESH_MS: ${INDEX_REFRESH_MS:-86400000}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-12000}
+    volumes:
+      - index-cache:/app/.cache
     restart: unless-stopped
     init: true
+
+volumes:
+  index-cache:

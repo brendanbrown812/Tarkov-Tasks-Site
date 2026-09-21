@@ -176,7 +176,7 @@ article.addEventListener('click', event => {
 });
 async function loadIndex() {
   indexRetry.hidden = true; indexStatus.textContent = 'Loading task index…';
-  try { const data = await api('/api/tasks'); tasks = data.tasks; indexStatus.textContent = data.fixture ? 'Fixture mode · 1 supplied task' : `${tasks.length} tasks · ${data.stale ? 'Cached index; refresh unavailable' : 'Search locally, read from the wiki'}`; }
+  try { const data = await api('/api/tasks'); tasks = data.tasks; indexStatus.textContent = data.fixture ? 'Fixture mode · 1 supplied task' : `${tasks.length} tasks · ${data.stale ? 'Cached index; refreshing in background' : 'Search locally, read from the wiki'}`; }
   catch (error) { indexStatus.textContent = error.message; indexRetry.hidden = false; }
 }
 function restoreLocation() {
@@ -196,7 +196,7 @@ async function loadItems() {
   try {
     const data = await api('/api/items'); items = data.items;
     itemFilter.disabled = !items.length;
-    itemStatus.textContent = data.fixture ? 'Items are unavailable in development fixture mode.' : items.length + ' wiki inventory entries · ' + (data.stale ? 'Cached index; refresh unavailable' : 'Locations vary by item; spawns are not guaranteed');
+    itemStatus.textContent = data.fixture ? 'Items are unavailable in development fixture mode.' : items.length + ' wiki inventory entries · ' + (data.stale ? 'Cached index; refreshing in background' : 'Locations vary by item; spawns are not guaranteed');
   } catch (error) { itemStatus.textContent = error.message; itemRetry.hidden = false; }
 }
 itemRetry.addEventListener('click', loadItems);
