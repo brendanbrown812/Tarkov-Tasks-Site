@@ -66,11 +66,18 @@ test('image viewer opens the clicked image, cycles unique images and restores fo
 
 test('item filter, locations, retry and task switching share stale-response protection', async () => {
   const app = setup(); await tick();
-  const select = app.document.querySelector('#item-select');
-  assert.equal(select.options.length, 3);
+  const list = app.document.querySelector('#item-suggestions');
+  assert.equal(app.document.querySelector('#item-select'), null);
   const filter = app.document.querySelector('#item-filter'); filter.value = 'graphics'; filter.dispatchEvent(new app.dom.window.Event('input'));
-  assert.equal(select.options.length, 2);
-  select.value = '10'; select.dispatchEvent(new app.dom.window.Event('change'));
+  assert.equal(list.querySelectorAll('[role=option]').length, 1);
+  filter.dispatchEvent(new app.dom.window.KeyboardEvent('keydown', {key: 'ArrowDown'}));
+  assert.equal(filter.getAttribute('aria-activedescendant'), 'item-option-0');
+  filter.dispatchEvent(new app.dom.window.KeyboardEvent('keydown', {key: 'Escape'}));
+  assert.equal(filter.getAttribute('aria-expanded'), 'false');
+  filter.dispatchEvent(new app.dom.window.KeyboardEvent('keydown', {key: 'ArrowDown'}));
+  filter.dispatchEvent(new app.dom.window.KeyboardEvent('keydown', {key: 'Enter'}));
+  assert.equal(list.hidden, true);
+  assert.equal(filter.value, 'Graphics card');
   assert.equal(app.pending[0].path, '/api/items/10');
   app.pending[0].resolve({error: 'Offline'}, false); await tick();
   app.document.querySelector('#detail-retry').click(); assert.equal(app.pending[1].path, '/api/items/10');
@@ -78,7 +85,7 @@ test('item filter, locations, retry and task switching share stale-response prot
   app.pending[1].resolve(data); await tick();
   assert.equal(app.document.querySelector('.task-section h2').textContent, 'Where to find it');
   assert.equal(app.dom.window.location.search, '?item=10');
-  select.dispatchEvent(new app.dom.window.Event('change')); app.type('Debut'); app.key('Enter');
+  filter.dispatchEvent(new app.dom.window.Event('input')); list.querySelector('[role=option]').click(); app.type('Debut'); app.key('Enter');
   assert.equal(app.pending[2].signal.aborted, true);
   app.pending[3].resolve(taskData(1, 'Debut')); await tick(); app.pending[2].resolve(data); await tick();
   assert.equal(app.document.querySelector('h1').textContent, 'Debut');

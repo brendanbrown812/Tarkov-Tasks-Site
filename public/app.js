@@ -5,13 +5,13 @@ const detailStatus = document.querySelector('#detail-status');
 const article = document.querySelector('#task');
 const indexRetry = document.querySelector('#index-retry');
 const detailRetry = document.querySelector('#detail-retry');
-const itemSelect = document.querySelector('#item-select');
+const itemSuggestions = document.querySelector('#item-suggestions');
 const itemFilter = document.querySelector('#item-filter');
 const itemStatus = document.querySelector('#item-status');
 const itemRetry = document.querySelector('#item-retry');
 let items = [], selectedKind = 'task';
 const initialContent = article.innerHTML;
-let tasks = [], matches = [], activeIndex = -1, controller, generation = 0, selectedId;
+let tasks = [], controller, generation = 0, selectedId;
 const element = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 const viewer = element('dialog', undefined, 'image-viewer');
 viewer.setAttribute('aria-label', 'Wiki image viewer');
@@ -77,37 +77,44 @@ function openViewer(img) {
   viewerClose.focus();
 }
 async function api(path, signal) { const response = await fetch(path, {signal}); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Request failed. Please retry.'); return data; }
-function closeSuggestions() { suggestions.hidden = true; search.setAttribute('aria-expanded', 'false'); search.removeAttribute('aria-activedescendant'); activeIndex = -1; }
-function activate(index) {
-  activeIndex = index;
-  [...suggestions.children].forEach((node, i) => node.setAttribute('aria-selected', String(i === index)));
-  if (index >= 0) { search.setAttribute('aria-activedescendant', `option-${index}`); suggestions.children[index]?.scrollIntoView({block: 'nearest'}); }
-  else search.removeAttribute('aria-activedescendant');
-}
-function showSuggestions() {
-  const query = search.value.trim().toLocaleLowerCase();
-  matches = tasks.filter(task => task.title.toLocaleLowerCase().includes(query)).sort((a, b) => Number(b.title.toLocaleLowerCase().startsWith(query)) - Number(a.title.toLocaleLowerCase().startsWith(query)) || a.title.localeCompare(b.title)).slice(0, 30);
-  suggestions.replaceChildren();
-  for (const [index, task] of matches.entries()) {
-    const item = element('li', task.title + (task.story ? ' · Main story' : '')); item.id = `option-${index}`; item.setAttribute('role', 'option'); item.setAttribute('aria-selected', 'false');
-    item.addEventListener('pointerdown', event => event.preventDefault());
-    item.addEventListener('click', () => choose(task.pageid)); suggestions.append(item);
+function createPicker(input, list, getEntries, kind, optionPrefix) {
+  let matches = [], activeIndex = -1;
+  function close() { list.hidden = true; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); activeIndex = -1; }
+  function activate(index) {
+    activeIndex = index;
+    [...list.children].forEach((node, i) => node.setAttribute('aria-selected', String(i === index)));
+    if (index >= 0) { input.setAttribute('aria-activedescendant', optionPrefix + index); list.children[index]?.scrollIntoView({block: 'nearest'}); }
+    else input.removeAttribute('aria-activedescendant');
   }
-  if (!matches.length) { const item = element('li', 'No matching tasks. Try another title.'); item.setAttribute('role', 'presentation'); suggestions.append(item); }
-  activeIndex = -1; search.removeAttribute('aria-activedescendant'); suggestions.hidden = false; search.setAttribute('aria-expanded', 'true');
-}
-search.addEventListener('input', showSuggestions);
-search.addEventListener('focus', () => { if (tasks.length) showSuggestions(); });
-search.addEventListener('keydown', event => {
-  if (event.key === 'Escape') { closeSuggestions(); return; }
-  if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
-    event.preventDefault(); if (suggestions.hidden) showSuggestions();
-    if (matches.length) activate((activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length);
+  function show() {
+    const query = input.value.trim().toLocaleLowerCase();
+    matches = getEntries().filter(entry => entry.title.toLocaleLowerCase().includes(query)).sort((a, b) => Number(b.title.toLocaleLowerCase().startsWith(query)) - Number(a.title.toLocaleLowerCase().startsWith(query)) || a.title.localeCompare(b.title)).slice(0, 30);
+    list.replaceChildren();
+    for (const [index, entry] of matches.entries()) {
+      const option = element('li', entry.title + (entry.story ? ' · Main story' : '')); option.id = optionPrefix + index; option.setAttribute('role', 'option'); option.setAttribute('aria-selected', 'false');
+      option.addEventListener('pointerdown', event => event.preventDefault());
+      option.addEventListener('click', () => choose(entry.pageid, true, '', kind)); list.append(option);
+    }
+    if (!matches.length) { const option = element('li', 'No matching ' + (kind === 'item' ? 'items' : 'tasks') + '. Try another title.'); option.setAttribute('role', 'presentation'); list.append(option); }
+    activeIndex = -1; input.removeAttribute('aria-activedescendant'); list.hidden = false; input.setAttribute('aria-expanded', 'true');
   }
-  if (event.key === 'Enter' && !suggestions.hidden && matches.length) { event.preventDefault(); choose(matches[Math.max(0, activeIndex)].pageid); }
-});
-document.addEventListener('pointerdown', event => { if (!event.target.closest('.search-wrap')) closeSuggestions(); });
-search.addEventListener('blur', closeSuggestions);
+  input.addEventListener('input', show);
+  input.addEventListener('focus', () => { if (getEntries().length) show(); });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { close(); return; }
+    if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault(); if (list.hidden) show();
+      if (matches.length) activate(activeIndex < 0 ? (event.key === 'ArrowDown' ? 0 : matches.length - 1) : (activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length);
+    }
+    if (event.key === 'Enter' && !list.hidden && matches.length) { event.preventDefault(); choose(matches[Math.max(0, activeIndex)].pageid, true, '', kind); }
+  });
+  document.addEventListener('pointerdown', event => { if (!input.closest('.search-wrap').contains(event.target)) close(); });
+  input.addEventListener('blur', close);
+  return {close};
+}
+const taskPicker = createPicker(search, suggestions, () => tasks, 'task', 'option-');
+const itemPicker = createPicker(itemFilter, itemSuggestions, () => items, 'item', 'item-option-');
+function closeSuggestions() { taskPicker.close(); itemPicker.close(); }
 function externalLink(text, href) { const a = element('a', text); a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
 function renderTask(data) {
   article.replaceChildren();
@@ -145,12 +152,12 @@ async function choose(id, push = true, hash = '', kind = 'task') {
   closeSuggestions(); controller?.abort(); controller = new AbortController(); const version = ++generation; selectedId = id; selectedKind = kind;
   if (push) history.pushState({}, '', `?${kind}=${id}${hash}`);
   if (kind === 'task') search.value = tasks.find(task => task.pageid === Number(id))?.title || search.value;
-  itemSelect.value = kind === 'item' ? String(id) : '';
+  itemFilter.value = kind === 'item' ? (items.find(item => item.pageid === Number(id))?.title || itemFilter.value) : '';
   article.replaceChildren(); article.setAttribute('aria-busy', 'true'); detailStatus.textContent = kind === 'item' ? 'Loading item locations…' : 'Loading task briefing…'; detailRetry.hidden = true;
   try {
     const data = await api(`/api/${kind === 'item' ? 'items' : 'tasks'}/${encodeURIComponent(id)}`, controller.signal);
     if (version !== generation) return;
-    if (kind === 'task') search.value = data.title; renderTask({...data, kind}); detailStatus.textContent = data.fixture ? 'DEVELOPMENT FIXTURE · Attached Debut response. Live fetching is disabled in this mode.' : '';
+    (kind === 'task' ? search : itemFilter).value = data.title; renderTask({...data, kind}); detailStatus.textContent = data.fixture ? 'DEVELOPMENT FIXTURE · Attached Debut response. Live fetching is disabled in this mode.' : '';
     if (hash) { try { const target = document.getElementById(decodeURIComponent(hash.slice(1))); if (target?.tagName === 'DETAILS') target.open = true; target?.scrollIntoView(); } catch {} }
   } catch (error) { if (version !== generation || error.name === 'AbortError') return; detailStatus.textContent = error.message; detailRetry.hidden = false; }
   finally { if (version === generation) article.removeAttribute('aria-busy'); }
@@ -174,33 +181,23 @@ async function loadIndex() {
 }
 function restoreLocation() {
   closeViewer();
+  closeSuggestions();
   const params = new URLSearchParams(location.search);
   const kind = params.has('item') ? 'item' : 'task';
   const id = params.get(kind);
   if (id) choose(id, false, location.hash, kind);
-  else { controller?.abort(); generation++; selectedId = null; itemSelect.value = ''; search.value = ''; detailStatus.textContent = ''; detailRetry.hidden = true; article.removeAttribute('aria-busy'); article.innerHTML = initialContent; }
+  else { controller?.abort(); generation++; selectedId = null; itemFilter.value = ''; search.value = ''; detailStatus.textContent = ''; detailRetry.hidden = true; article.removeAttribute('aria-busy'); article.innerHTML = initialContent; }
 }
 window.addEventListener('popstate', restoreLocation);
 indexRetry.addEventListener('click', loadIndex); detailRetry.addEventListener('click', () => choose(selectedId, false, location.hash, selectedKind));
-function filterItems() {
-  const query = itemFilter.value.trim().toLocaleLowerCase();
-  const matches = items.filter(item => item.title.toLocaleLowerCase().includes(query));
-  const placeholder = element('option', matches.length ? 'Choose an item…' : 'No matching items'); placeholder.value = '';
-  itemSelect.replaceChildren(placeholder);
-  for (const item of matches) { const option = element('option', item.title); option.value = String(item.pageid); itemSelect.append(option); }
-  itemSelect.value = selectedKind === 'item' && matches.some(item => item.pageid === Number(selectedId)) ? String(selectedId) : '';
-}
 async function loadItems() {
   itemRetry.hidden = true;
   itemStatus.textContent = 'Loading item index; the first load can take a minute…';
   try {
     const data = await api('/api/items'); items = data.items;
-    itemFilter.disabled = itemSelect.disabled = !items.length;
-    filterItems();
+    itemFilter.disabled = !items.length;
     itemStatus.textContent = data.fixture ? 'Items are unavailable in development fixture mode.' : items.length + ' wiki inventory entries · ' + (data.stale ? 'Cached index; refresh unavailable' : 'Locations vary by item; spawns are not guaranteed');
   } catch (error) { itemStatus.textContent = error.message; itemRetry.hidden = false; }
 }
-itemFilter.addEventListener('input', filterItems);
-itemSelect.addEventListener('change', () => { if (itemSelect.value) choose(itemSelect.value, true, '', 'item'); });
 itemRetry.addEventListener('click', loadItems);
 loadIndex(); loadItems(); restoreLocation();

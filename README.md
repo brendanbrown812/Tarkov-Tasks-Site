@@ -83,7 +83,7 @@ Fandom availability, changes to wiki markup, and source-image hosting remain ups
 
 ## Item lookup
 
-A second dropdown lists all article entries reachable through the wiki Inventory category, including nested item, medicine, provision, gear, weapon, ammunition and attachment categories. It also includes inventory overview guides from those categories. Filter locally by name, then select an entry to fetch its current article. Location sections appear first as “Where to find it,” preserving container lists, map subsections and images. Articles without location sections say so; the wiki does not guarantee spawns or provide location data for every item.
+A second dropdown lists all article entries reachable through the wiki Inventory category, including nested item, medicine, provision, gear, weapon, ammunition and attachment categories. It also includes inventory overview guides from those categories. Type in the single item picker, then click a suggestion or use arrow keys and Enter to fetch its current article. It shares the task picker’s appearance, prefix ranking and Escape/blur behavior. Location sections appear first as “Where to find it,” preserving container lists, map subsections and images. Articles without location sections say so; the wiki does not guarantee spawns or provide location data for every item.
 
 `GET /api/items` returns `{items: [{pageid, title}], updatedAt, stale}`. The recursive index follows pagination, deduplicates pages and categories, and uses the same cache refresh and stale fallback behavior as tasks. `GET /api/items/:pageid` returns sanitized article content. Item URLs use `?item=PAGE_ID` and support history and retries. Fixture mode explicitly disables items.
 
